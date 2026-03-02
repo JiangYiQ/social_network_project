@@ -64,5 +64,39 @@ class TestSocialGraph(unittest.TestCase):
         self.assertIn(3, self.graph.graph[1])
         os.remove("data/test_rels.txt")
 
+    def test_find_second_degree_friends(self):
+        # 用户1的二度人脉应为[4]
+        result = self.graph.find_second_degree_friends(1)
+        self.assertEqual(result, [4])
+        # 用户4的二度人脉应为[1,3]
+        result = self.graph.find_second_degree_friends(4)
+        self.assertEqual(set(result), {1, 3})
+        # 优化版结果一致
+        result_opt = self.graph.find_second_degree_friends_optimized(1)
+        self.assertEqual(result_opt, [4])
+
+    def test_calculate_distance_unweighted(self):
+        dist, path = self.graph.calculate_distance(1, 4, use_weighted=False)
+        self.assertEqual(dist, 2)
+        self.assertEqual(path, [1, 2, 4])
+
+    def test_calculate_distance_weighted(self):
+        dist, path = self.graph.calculate_distance(1, 4, use_weighted=True)
+        self.assertEqual(dist, 12)  # 5+7
+        self.assertEqual(path, [1, 2, 4])
+
+    def test_find_n_degree_friends(self):
+        # 3度人脉（目前数据不足以有3度，应为空）
+        result = self.graph.find_n_degree_friends(1, 3)
+        self.assertEqual(result, [])
+
+        # 先添加用户5，再添加关系
+        self.graph.add_user(5, "孙七", ["兴趣"])  # ✅ 先添加用户
+        self.graph.add_friendship(4, 5, weight=1)  # ✅ 再建立关系
+
+        # 用户1的3度人脉应为5（1-2-4-5）
+        result = self.graph.find_n_degree_friends(1, 3)
+        self.assertEqual(result, [5])
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

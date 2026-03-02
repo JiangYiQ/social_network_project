@@ -3,6 +3,7 @@ from collections import defaultdict, deque
 from typing import Dict, Set, Tuple, List, Optional, Any
 import csv
 import os
+import heapq
 
 class SocialGraph:
     def __init__(self):
@@ -182,3 +183,160 @@ class SocialGraph:
         # 按权重降序排序，权重相同时按ID升序
         result.sort(key=lambda x: (-x[1], x[0]))
         return result
+
+    #实现二度人脉查询（BFS算法）
+    #基础版
+    def find_second_degree_friends(self, user_id: int) -> List[int]:
+        """查找二度人脉（好友的好友），使用BFS算法，深度限制为2"""
+        if user_id not in self.user_attrs:
+            print(f"警告：用户 {user_id} 不存在，无法查询二度人脉")
+            return []
+
+        visited = set([user_id])
+        queue = deque([(user_id, 0)])
+        second_degree = set()
+
+        while queue:
+            current_user, depth = queue.popleft()
+            if depth >= 2:
+                continue
+            for friend in self.graph.get(current_user, set()):
+                if friend not in visited:
+                    visited.add(friend)
+                    if depth + 1 == 2:
+                        second_degree.add(friend)
+                    else:
+                        queue.append((friend, depth + 1))
+
+        # 排除直接好友和自身
+        direct_friends = set(self.graph.get(user_id, set()))
+        second_degree = second_degree - direct_friends
+        second_degree.discard(user_id)
+        return sorted(list(second_degree))
+
+    #优化版（提升效率）
+    def find_second_degree_friends_optimized(self, user_id: int) -> List[int]:
+        """优化版二度人脉查询，减少集合操作"""
+        if user_id not in self.user_attrs:
+            return []
+        direct_friends = set(self.graph.get(user_id, set()))
+        visited = set([user_id]) | direct_friends
+        queue = deque([(friend, 1) for friend in direct_friends])
+        second_degree = set()
+
+        while queue:
+            current_user, depth = queue.popleft()
+            if depth != 1:
+                continue
+            for neighbor in self.graph.get(current_user, set()):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    second_degree.add(neighbor)
+        return sorted(list(second_degree))
+
+    #实现扩展功能A：多度人脉查询（N>=3）
+    def find_n_degree_friends(self, user_id: int, n: int = 3) -> List[int]:
+        """查找N度人脉（N≥3），使用BFS，深度限制为n"""
+        if user_id not in self.user_attrs or not isinstance(n, int) or n < 3:
+            print(f"参数错误：用户不存在或度数N≥3，当前N={n}")
+            return []
+        visited = {user_id: 0}
+        queue = deque([user_id])
+        n_degree = set()
+
+        while queue:
+            current = queue.popleft()
+            current_depth = visited[current]
+            if current_depth >= n:
+                continue
+            for neighbor in self.graph.get(current, set()):
+                if neighbor not in visited:
+                    new_depth = current_depth + 1
+                    visited[neighbor] = new_depth
+                    queue.append(neighbor)
+                    if new_depth == n:
+                        n_degree.add(neighbor)
+        return sorted(list(n_degree))
+
+    #实现最短路径算法
+    #无权图最短路径（BFS）
+    def _shortest_path_unweighted(self, start: int, target: int) -> Tuple[int, List[int]]:
+        """私有方法：无权图最短路径计算，返回距离与路径"""
+        if start not in self.user_attrs or target not in self.user_attrs:
+            return -1, []
+        if start == target:
+            return 0, [start]
+
+        visited = {start: None}
+        queue = deque([start])
+        found = False
+
+        while queue and not found:
+            current = queue.popleft()
+            for neighbor in self.graph.get(current, set()):
+                if neighbor not in visited:
+                    visited[neighbor] = current
+                    queue.append(neighbor)
+                    if neighbor == target:
+                        found = True
+                        break
+
+        if not found:
+            return -1, []
+
+        # 回溯路径
+        path = []
+        current = target
+        while current is not None:
+            path.insert(0, current)
+            current = visited[current]
+        return len(path) - 1, path
+
+    #加权图最短路径（Dijkstra+堆优化）
+    def _shortest_path_weighted(self, start: int, target: int) -> Tuple[int, List[int]]:
+        """私有方法：加权图最短路径（Dijkstra算法），返回距离与路径"""
+        if start not in self.user_attrs or target not in self.user_attrs:
+            return -1, []
+        if start == target:
+            return 0, [start]
+
+        distances = {uid: float('inf') for uid in self.user_attrs}
+        distances[start] = 0
+        predecessors = {uid: None for uid in self.user_attrs}
+        heap = [(0, start)]
+        visited = set()
+
+        while heap:
+            current_dist, current_node = heapq.heappop(heap)
+            if current_node in visited or current_dist > distances[current_node]:
+                continue
+            visited.add(current_node)
+
+            for neighbor in self.graph.get(current_node, set()):
+                if neighbor in visited:
+                    continue
+                key = (min(current_node, neighbor), max(current_node, neighbor))
+                weight = self.edge_weights.get(key, 1)
+                new_dist = current_dist + weight
+                if new_dist < distances[neighbor]:
+                    distances[neighbor] = new_dist
+                    predecessors[neighbor] = current_node
+                    heapq.heappush(heap, (new_dist, neighbor))
+
+        if distances[target] == float('inf'):
+            return -1, []
+
+        path = []
+        current = target
+        while current is not None:
+            path.insert(0, current)
+            current = predecessors[current]
+        return distances[target], path
+
+    #统一计算距离接口
+    def calculate_distance(self, start: int, target: int, use_weighted: bool = False) -> Tuple[int, List[int]]:
+        """统一社交距离计算接口，支持加权/无权图切换"""
+        if use_weighted:
+            return self._shortest_path_weighted(start, target)
+        else:
+            return self._shortest_path_unweighted(start, target)
