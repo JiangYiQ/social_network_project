@@ -1,336 +1,324 @@
-# app.py
+# src/app.py
 import tkinter as tk
-from tkinter import ttk, messagebox
-from typing import Tuple
+from tkinter import ttk, messagebox, filedialog, Menu
+from tkinter.scrolledtext import ScrolledText
+from src.social_graph import SocialGraph
+import os
+from typing import List, Tuple
+import datetime
 
 
-class SocialNetworkGUI:
-    def __init__(self, root):
+class SocialNetworkApp:
+    def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("社交网络分析系统 v1.0")
-        self.root.geometry("900x700")
+        self.root.title("社交网络分析系统")
+        self.root.geometry("1000x700")
+        self.root.resizable(True, True)
 
-        # 设置样式
-        self.root.configure(bg='#f0f0f0')
+        self.graph = SocialGraph()
+        # 修改为正确的绝对路径
+        self.user_csv_path = "C:/Users/零零幺/OneDrive/Documents/桌面/social_network_project/data/user_sample.csv"
+        self.relation_txt_path = "C:/Users/零零幺/OneDrive/Documents/桌面/social_network_project/data/relationships.txt"
 
-        # 创建界面
-        self.create_widgets()
+        self.user_id_var = tk.StringVar()
+        self.start_id_var = tk.StringVar()
+        self.target_id_var = tk.StringVar()
+        self.degree_var = tk.StringVar(value="3")
+        self.top_k_var = tk.StringVar(value="5")
+        self.weighted_var = tk.BooleanVar(value=False)
 
-    def create_widgets(self):
-        """创建所有界面元素"""
+        self.setup_ui()
+        self.load_data()
 
-        # ========== 标题区域 ==========
-        title_frame = tk.Frame(self.root, bg='#2c3e50', height=60)
-        title_frame.pack(fill=tk.X)
-        title_frame.pack_propagate(False)
+    def setup_ui(self):
+        # 菜单栏
+        menubar = Menu(self.root)
+        self.root.config(menu=menubar)
+        file_menu = Menu(menubar, tearoff=0)
+        file_menu.add_command(label="加载用户数据", command=self.load_user_data_manual)
+        file_menu.add_command(label="加载关系数据", command=self.load_relation_data_manual)
+        file_menu.add_separator()
+        file_menu.add_command(label="退出", command=self.root.quit)
+        menubar.add_cascade(label="文件", menu=file_menu)
 
-        title_label = tk.Label(title_frame, text="社交网络分析系统",
-                               font=("微软雅黑", 20, "bold"),
-                               bg='#2c3e50', fg='white')
-        title_label.pack(expand=True)
+        help_menu = Menu(menubar, tearoff=0)
+        help_menu.add_command(label="功能说明", command=self.show_help)
+        help_menu.add_command(label="关于", command=self.show_about)
+        menubar.add_cascade(label="帮助", menu=help_menu)
 
-        # ========== 主内容区域 ==========
-        main_frame = tk.Frame(self.root, bg='#f0f0f0')
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        # 左侧功能区
+        left_frame = ttk.Frame(self.root, width=300)
+        left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
+        left_frame.pack_propagate(False)
 
-        # ========== 左侧输入面板 ==========
-        left_panel = tk.Frame(main_frame, bg='white', relief=tk.RAISED, bd=2)
-        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        # 一度人脉
+        direct_frame = ttk.LabelFrame(left_frame, text="一度人脉查询", padding=(10, 5))
+        direct_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(direct_frame, text="用户ID：").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(direct_frame, textvariable=self.user_id_var, width=15).grid(row=0, column=1, pady=5)
+        ttk.Button(direct_frame, text="查询", command=self.query_direct_friends).grid(row=0, column=2, padx=5, pady=5)
 
-        # 输入区域标题
-        input_title = tk.Label(left_panel, text="查询参数输入",
-                               font=("微软雅黑", 14, "bold"),
-                               bg='#3498db', fg='white', pady=8)
-        input_title.pack(fill=tk.X)
+        # 二度人脉
+        second_frame = ttk.LabelFrame(left_frame, text="二度人脉查询", padding=(10, 5))
+        second_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(second_frame, text="用户ID：").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(second_frame, textvariable=self.user_id_var, width=15).grid(row=0, column=1, pady=5)
+        ttk.Button(second_frame, text="查询", command=self.query_second_degree).grid(row=0, column=2, padx=5, pady=5)
 
-        # 输入表单
-        form_frame = tk.Frame(left_panel, bg='white', padx=15, pady=15)
-        form_frame.pack()
+        # 社交距离
+        distance_frame = ttk.LabelFrame(left_frame, text="社交距离计算", padding=(10, 5))
+        distance_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(distance_frame, text="起点ID：").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(distance_frame, textvariable=self.start_id_var, width=15).grid(row=0, column=1, pady=5)
+        ttk.Label(distance_frame, text="终点ID：").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(distance_frame, textvariable=self.target_id_var, width=15).grid(row=1, column=1, pady=5)
+        ttk.Checkbutton(distance_frame, text="加权图", variable=self.weighted_var).grid(row=0, column=2, padx=5, pady=5,
+                                                                                        rowspan=2)
+        ttk.Button(distance_frame, text="计算", command=self.calculate_distance).grid(row=2, column=1, pady=5)
 
-        # 用户ID输入
-        tk.Label(form_frame, text="用户ID:", font=("微软雅黑", 11),
-                 bg='white').grid(row=0, column=0, sticky=tk.W, pady=8)
-        self.entry_user_id = tk.Entry(form_frame, font=("微软雅黑", 11),
-                                      width=20, bd=2, relief=tk.GROOVE)
-        self.entry_user_id.grid(row=0, column=1, pady=8, padx=(10, 0))
+        # 扩展功能
+        extend_frame = ttk.LabelFrame(left_frame, text="扩展功能", padding=(10, 5))
+        extend_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(extend_frame, text="多度人脉（度数）：").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(extend_frame, textvariable=self.degree_var, width=5).grid(row=0, column=1, pady=5)
+        ttk.Button(extend_frame, text="查询", command=self.query_n_degree).grid(row=0, column=2, padx=5, pady=5)
+        ttk.Label(extend_frame, text="兴趣推荐（数量）：").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(extend_frame, textvariable=self.top_k_var, width=5).grid(row=1, column=1, pady=5)
+        ttk.Button(extend_frame, text="推荐", command=self.recommend_by_interest).grid(row=1, column=2, padx=5, pady=5)
 
-        # 目标用户ID输入
-        tk.Label(form_frame, text="目标用户ID:", font=("微软雅黑", 11),
-                 bg='white').grid(row=1, column=0, sticky=tk.W, pady=8)
-        self.entry_target_id = tk.Entry(form_frame, font=("微软雅黑", 11),
-                                        width=20, bd=2, relief=tk.GROOVE)
-        self.entry_target_id.grid(row=1, column=1, pady=8, padx=(10, 0))
+        # 右侧结果区
+        right_frame = ttk.Frame(self.root)
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # 度数N输入
-        tk.Label(form_frame, text="度数N(≥3):", font=("微软雅黑", 11),
-                 bg='white').grid(row=2, column=0, sticky=tk.W, pady=8)
-        self.entry_degree = tk.Entry(form_frame, font=("微软雅黑", 11),
-                                     width=20, bd=2, relief=tk.GROOVE)
-        self.entry_degree.grid(row=2, column=1, pady=8, padx=(10, 0))
-        self.entry_degree.insert(0, "3")  # 默认值
+        self.result_text = ScrolledText(right_frame, wrap=tk.WORD, font=("Consolas", 10))
+        self.result_text.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        self.result_text.config(state=tk.DISABLED)
 
-        # 加权选项
-        self.weighted_var = tk.BooleanVar()
-        tk.Checkbutton(form_frame, text="使用加权图计算",
-                       variable=self.weighted_var,
-                       font=("微软雅黑", 10), bg='white').grid(row=3, column=0,
-                                                               columnspan=2,
-                                                               sticky=tk.W, pady=10)
+        # 修复：将 anchor=tk.RIGHT 改为 anchor='e'
+        ttk.Button(right_frame, text="清空结果", command=self.clear_result).pack(anchor='e')
 
-        # 分隔线
-        tk.Frame(form_frame, height=2, bd=1, relief=tk.SUNKEN,
-                 bg='#cccccc').grid(row=4, column=0, columnspan=2,
-                                    sticky=tk.EW, pady=10)
+        self.display_result("欢迎使用社交网络分析系统！\n已自动加载默认数据文件。\n", "info")
 
-        # ========== 功能按钮区域 ==========
-        btn_frame = tk.Frame(left_panel, bg='white', padx=15, pady=10)
-        btn_frame.pack(fill=tk.X)
+    def display_result(self, message: str, tag: str = "normal"):
+        self.result_text.config(state=tk.NORMAL)
+        time_str = datetime.datetime.now().strftime("[%H:%M:%S] ")
+        full_msg = time_str + message + "\n"
+        self.result_text.tag_config("info", foreground="#0066CC")
+        self.result_text.tag_config("success", foreground="#009933")
+        self.result_text.tag_config("error", foreground="#CC0000")
+        self.result_text.insert(tk.END, full_msg, tag)
+        self.result_text.see(tk.END)
+        self.result_text.config(state=tk.DISABLED)
 
-        # 定义按钮样式
-        btn_style = {
-            'font': ("微软雅黑", 10),
-            'width': 18,
-            'height': 1,
-            'bd': 0,
-            'cursor': 'hand2'
-        }
+    def clear_result(self):
+        self.result_text.config(state=tk.NORMAL)
+        self.result_text.delete(1.0, tk.END)
+        self.result_text.config(state=tk.DISABLED)
+        self.display_result("结果区已清空", "info")
 
-        # 创建按钮
-        buttons = [
-            ("一度人脉查询", self.query_direct_friends, '#3498db'),
-            ("二度人脉查询", self.query_second_degree, '#2980b9'),
-            ("社交距离计算", self.calculate_distance, '#27ae60'),
-            ("N度人脉查询", self.query_n_degree, '#e67e22'),
-            ("兴趣推荐", self.recommend_by_interest, '#9b59b6'),
-            ("清空结果", self.clear_result, '#7f8c8d'),
-            ("关于系统", self.about, '#95a5a6'),
-        ]
+    def load_data(self):
+        self.display_result("开始加载默认数据...", "info")
 
-        for i, (text, command, color) in enumerate(buttons):
-            btn = tk.Button(btn_frame, text=text, command=command,
-                            bg=color, fg='white', activebackground=color,
-                            activeforeground='white', **btn_style)
-            btn.pack(pady=3)
+        # 检查文件是否存在
+        import os
+        if not os.path.exists(self.user_csv_path):
+            self.display_result(f"错误：用户数据文件不存在 -> {self.user_csv_path}", "error")
+            self.display_result("请检查文件路径或手动加载", "info")
+        else:
+            self.display_result(f"找到用户数据文件：{self.user_csv_path}", "info")
+            user_ok = self.graph.load_users_from_csv(self.user_csv_path)
+            if user_ok:
+                self.display_result("用户数据加载成功", "success")
+            else:
+                self.display_result("用户数据加载失败，请检查文件格式", "error")
 
-        # ========== 右侧结果显示区域 ==========
-        right_panel = tk.Frame(main_frame, bg='white', relief=tk.RAISED, bd=2)
-        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        if not os.path.exists(self.relation_txt_path):
+            self.display_result(f"错误：关系数据文件不存在 -> {self.relation_txt_path}", "error")
+            self.display_result("请检查文件路径或手动加载", "info")
+        else:
+            self.display_result(f"找到关系数据文件：{self.relation_txt_path}", "info")
+            rel_ok = self.graph.load_relationships_from_txt(self.relation_txt_path)
+            if rel_ok:
+                self.display_result("关系数据加载成功", "success")
+            else:
+                self.display_result("关系数据加载失败，请检查文件格式", "error")
 
-        # 结果显示标题
-        result_title = tk.Label(right_panel, text="查询结果",
-                                font=("微软雅黑", 14, "bold"),
-                                bg='#3498db', fg='white', pady=8)
-        result_title.pack(fill=tk.X)
+        if hasattr(self.graph, 'user_attrs') and self.graph.user_attrs:
+            self.display_result(f"当前系统共有 {len(self.graph.user_attrs)} 个用户", "info")
 
-        # 结果显示文本框
-        self.result_text = tk.Text(right_panel, wrap=tk.WORD,
-                                   font=("Consolas", 11),
-                                   bg='#ffffff', fg='#2c3e50',
-                                   padx=15, pady=15,
-                                   relief=tk.SUNKEN, bd=1)
-        self.result_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    def load_user_data_manual(self):
+        path = filedialog.askopenfilename(title="选择用户数据文件",
+                                          filetypes=[("CSV文件", "*.csv"), ("所有文件", "*.*")])
+        if path:
+            self.user_csv_path = path
+            if self.graph.load_users_from_csv(path):
+                self.display_result(f"用户数据加载成功（{path}）", "success")
+            else:
+                self.display_result(f"用户数据加载失败（{path}）", "error")
 
-        # 配置文本标签样式
-        self.result_text.tag_config("info", foreground="#3498db")
-        self.result_text.tag_config("success", foreground="#27ae60")
-        self.result_text.tag_config("warning", foreground="#e67e22")
-
-        # 显示初始信息
-        self.display_simulation_result("欢迎使用社交网络分析系统！\n请输入参数并选择功能开始查询。", "info")
-
-    # ========== 工具方法 ==========
+    def load_relation_data_manual(self):
+        path = filedialog.askopenfilename(title="选择关系数据文件",
+                                          filetypes=[("TXT文件", "*.txt"), ("所有文件", "*.*")])
+        if path:
+            self.relation_txt_path = path
+            if self.graph.load_relationships_from_txt(path):
+                self.display_result(f"关系数据加载成功（{path}）", "success")
+            else:
+                self.display_result(f"关系数据加载失败（{path}）", "error")
 
     def _validate_user_id(self, user_id_str: str) -> Tuple[bool, int]:
-        """
-        验证用户ID输入
-        返回：(是否有效, 转换后的ID)
-        """
-        if not user_id_str or not user_id_str.strip():
-            messagebox.showerror("输入错误", "请输入用户ID")
-            return False, -1
-
         try:
             user_id = int(user_id_str.strip())
             if user_id <= 0:
                 raise ValueError("用户ID必须为正整数")
+            if not hasattr(self.graph, 'user_attrs') or user_id not in self.graph.user_attrs:
+                raise ValueError(f"用户ID {user_id} 不存在")
             return True, user_id
         except ValueError as e:
-            messagebox.showerror("输入错误", f"无效的用户ID：{str(e)}")
+            messagebox.showerror("输入错误", str(e))
             return False, -1
 
-    def display_simulation_result(self, message: str, result_type: str = "info"):
-        """
-        显示模拟结果
-        :param message: 要显示的消息
-        :param result_type: "info"（蓝色）、"success"（绿色）、"warning"（橙色）
-        """
-        # 清除旧内容
-        self.result_text.delete(1.0, tk.END)
-
-        # 插入带颜色的消息
-        self.result_text.insert(tk.END, message, result_type)
-        self.result_text.insert(tk.END, "\n\n" + "=" * 50 + "\n")
-        self.result_text.insert(tk.END, "【说明】这是模拟数据，明天将集成真实算法")
-
-    # ========== 事件处理函数（模拟版本） ==========
-
     def query_direct_friends(self):
-        """查询一度人脉（直接好友）- 模拟版本"""
-        user_id = self.entry_user_id.get().strip()
-
-        # 验证输入
-        is_valid, uid = self._validate_user_id(user_id)
-        if not is_valid:
+        user_id_str = self.user_id_var.get()
+        valid, user_id = self._validate_user_id(user_id_str)
+        if not valid:
             return
-
-        # 模拟显示结果
-        result_msg = f"【模拟结果】用户 {uid} 的一度人脉查询结果：\n"
-        result_msg += "好友列表：[2, 3]\n"
-        result_msg += "共找到 2 位直接好友"
-
-        self.display_simulation_result(result_msg, "success")
+        friends = self.graph.get_direct_friends(user_id)
+        user_name = self.graph.user_attrs[user_id]['name']
+        if not friends:
+            self.display_result(f"用户{user_id}（{user_name}）无直接好友", "info")
+            return
+        friend_info = []
+        for fid in friends:
+            fname = self.graph.user_attrs[fid]['name']
+            friend_info.append(f"{fid}（{fname}）")
+        self.display_result(f"用户{user_id}（{user_name}）的一度人脉：{', '.join(friend_info)}", "success")
 
     def query_second_degree(self):
-        """查询二度人脉（好友的好友）- 模拟版本"""
-        user_id = self.entry_user_id.get().strip()
-
-        is_valid, uid = self._validate_user_id(user_id)
-        if not is_valid:
+        user_id_str = self.user_id_var.get()
+        valid, user_id = self._validate_user_id(user_id_str)
+        if not valid:
             return
-
-        result_msg = f"【模拟结果】用户 {uid} 的二度人脉查询结果：\n"
-        result_msg += "二度人脉列表：[4, 5]\n"
-        result_msg += "说明：这些是您好友的好友，可能感兴趣的人"
-
-        self.display_simulation_result(result_msg, "success")
+        second = self.graph.find_second_degree_friends_optimized(user_id)
+        user_name = self.graph.user_attrs[user_id]['name']
+        if not second:
+            self.display_result(f"用户{user_id}（{user_name}）无二度人脉", "info")
+            return
+        friend_info = []
+        for fid in second:
+            fname = self.graph.user_attrs[fid]['name']
+            friend_info.append(f"{fid}（{fname}）")
+        self.display_result(f"用户{user_id}（{user_name}）的二度人脉：{', '.join(friend_info)}", "success")
 
     def calculate_distance(self):
-        """计算社交距离 - 模拟版本"""
-        user_id1 = self.entry_user_id.get().strip()
-        user_id2 = self.entry_target_id.get().strip()
-
-        if not user_id1 or not user_id2:
-            messagebox.showerror("输入错误", "请输入源用户ID和目标用户ID")
+        start_str = self.start_id_var.get()
+        target_str = self.target_id_var.get()
+        valid_start, start_id = self._validate_user_id(start_str)
+        valid_target, target_id = self._validate_user_id(target_str)
+        if not valid_start or not valid_target:
             return
-
-        is_valid1, uid1 = self._validate_user_id(user_id1)
-        is_valid2, uid2 = self._validate_user_id(user_id2)
-
-        if not is_valid1 or not is_valid2:
+        distance, path = self.graph.calculate_distance(start_id, target_id, self.weighted_var.get())
+        start_name = self.graph.user_attrs[start_id]['name']
+        target_name = self.graph.user_attrs[target_id]['name']
+        mode = "加权图" if self.weighted_var.get() else "无权图"
+        if distance == -1:
+            self.display_result(f"{mode}下，用户{start_id}（{start_name}）与{target_id}（{target_name}）无连通路径", "info")
             return
-
-        # 获取加权选项
-        use_weighted = self.weighted_var.get()
-        weight_type = "加权" if use_weighted else "无权"
-
-        result_msg = f"【模拟结果】用户 {uid1} 到用户 {uid2} 的{weight_type}社交距离：\n"
-        result_msg += f"最短距离：2\n"
-        result_msg += f"最短路径：{uid1} → 2 → {uid2}\n"
-        result_msg += f"路径长度：2步"
-
-        self.display_simulation_result(result_msg, "success")
+        path_info = []
+        for fid in path:
+            fname = self.graph.user_attrs[fid]['name']
+            path_info.append(f"{fid}（{fname}）")
+        path_str = " -> ".join(path_info)
+        dist_desc = f"权重和：{distance}" if self.weighted_var.get() else f"距离：{distance}（边数）"
+        self.display_result(
+            f"{mode}下，用户{start_id}（{start_name}）与{target_id}（{target_name}）的最短路径：\n{path_str}\n{dist_desc}",
+            "success")
 
     def query_n_degree(self):
-        """查询N度人脉 - 模拟版本"""
-        user_id = self.entry_user_id.get().strip()
-        n_value = self.entry_degree.get().strip()
-
-        is_valid, uid = self._validate_user_id(user_id)
-        if not is_valid:
+        user_id_str = self.user_id_var.get()
+        degree_str = self.degree_var.get()
+        valid, user_id = self._validate_user_id(user_id_str)
+        if not valid:
             return
-
-        # 验证N值
         try:
-            n = int(n_value)
-            if n < 3:
-                messagebox.showwarning("输入警告", "N度人脉建议查询3度及以上，正在使用N=3")
-                n = 3
-        except ValueError:
-            messagebox.showerror("输入错误", "请输入有效的数字")
+            degree = int(degree_str.strip())
+            if degree < 3:
+                raise ValueError("多度人脉度数必须≥3")
+        except ValueError as e:
+            messagebox.showerror("输入错误", str(e))
             return
-
-        result_msg = f"【模拟结果】用户 {uid} 的 {n} 度人脉查询结果：\n"
-        result_msg += f"找到 {n} 度人脉：\n"
-        result_msg += "第3度：[5, 6, 7]\n"
-        if n >= 4:
-            result_msg += "第4度：[8, 9, 10]\n"
-        result_msg += f"共找到 {n + 3} 位用户"
-
-        self.display_simulation_result(result_msg, "success")
+        n_degree = self.graph.find_n_degree_friends(user_id, degree)
+        user_name = self.graph.user_attrs[user_id]['name']
+        if not n_degree:
+            self.display_result(f"用户{user_id}（{user_name}）无{degree}度人脉", "info")
+            return
+        friend_info = []
+        for fid in n_degree:
+            fname = self.graph.user_attrs[fid]['name']
+            friend_info.append(f"{fid}（{fname}）")
+        self.display_result(f"用户{user_id}（{user_name}）的{degree}度人脉：{', '.join(friend_info)}", "success")
 
     def recommend_by_interest(self):
-        """兴趣推荐 - 模拟版本"""
-        user_id = self.entry_user_id.get().strip()
-
-        is_valid, uid = self._validate_user_id(user_id)
-        if not is_valid:
+        user_id_str = self.user_id_var.get()
+        top_k_str = self.top_k_var.get()
+        valid, user_id = self._validate_user_id(user_id_str)
+        if not valid:
             return
+        try:
+            top_k = int(top_k_str.strip())
+            if top_k <= 0:
+                raise ValueError("推荐数量必须为正整数")
+        except ValueError as e:
+            messagebox.showerror("输入错误", str(e))
+            return
+        recommends = self.graph.recommend_by_interest(user_id, top_k)
+        user_name = self.graph.user_attrs[user_id]['name']
+        user_interests = ", ".join(self.graph.user_attrs[user_id]['interests'])
+        if not recommends:
+            self.display_result(f"无符合条件的推荐用户（用户{user_id}兴趣：{user_interests}）", "info")
+            return
+        recommend_info = []
+        for fid, count in recommends:
+            fname = self.graph.user_attrs[fid]['name']
+            recommend_info.append(f"{fid}（{fname}）[共同兴趣数：{count}]")
+        self.display_result(
+            f"基于兴趣推荐给用户{user_id}（{user_name}）的用户（前{top_k}名）：\n{', '.join(recommend_info)}\n用户兴趣：{user_interests}",
+            "success")
 
-        result_msg = f"【模拟结果】基于兴趣为 用户{uid} 推荐的用户：\n"
-        result_msg += "1. 用户5 - 共同兴趣：音乐、编程\n"
-        result_msg += "2. 用户8 - 共同兴趣：篮球、旅游\n"
-        result_msg += "3. 用户12 - 共同兴趣：摄影、阅读\n"
-        result_msg += "\n推荐度：★★★★☆"
+    def show_help(self):
+        help_text = """\
+社交网络分析系统功能说明：
+1. 一度人脉：查询指定用户的直接好友
+2. 二度人脉：查询用户的"好友的好友"（排除直接好友）
+3. 社交距离：计算两用户间最短路径（支持加权/无权图切换）
+4. 多度人脉：查询3度及以上人脉（自定义度数）
+5. 兴趣推荐：推荐有共同兴趣的非好友用户（按共同兴趣数排序）
 
-        self.display_simulation_result(result_msg, "success")
+操作提示：
+- 首次启动自动加载默认数据文件
+- 可通过"文件"菜单手动选择数据文件
+- 输入用户ID时请确保为正整数且存在于数据中
+- 结果区内容可通过"清空结果"按钮删除
+"""
+        messagebox.showinfo("功能说明", help_text)
 
-    def clear_result(self):
-        """清空结果显示区域"""
-        self.result_text.delete(1.0, tk.END)
-        self.display_simulation_result("结果显示区域已清空，可以开始新的查询", "info")
+    def show_about(self):
+        about_text = """\
+社交网络分析系统（V1.0）
+基于数据结构课程设计开发
+核心技术：Python、Tkinter、图论算法（BFS、Dijkstra）
+功能覆盖：人脉查询、路径计算、智能推荐
 
-    def about(self):
-        """显示关于信息"""
-        about_msg = """
-        社交网络分析系统 v1.0
-        ====================
-
-        开发团队：第X组
-        成员：组员A、组员B
-
-        功能列表：
-        • 一度人脉查询
-        • 二度人脉查询
-        • 社交距离计算（加权/无权）
-        • N度人脉查询（N≥3）
-        • 兴趣推荐
-
-        算法支持：BFS、Dijkstra
-        开发工具：Python + Tkinter
-
-        数据文件格式：
-        - users.csv：用户信息
-        - relationships.txt：关系数据
-
-        明天将集成真实算法，敬请期待！
-        """
-
-        # 创建新窗口显示关于信息
-        about_window = tk.Toplevel(self.root)
-        about_window.title("关于")
-        about_window.geometry("500x400")
-
-        # 设置模态窗口
-        about_window.transient(self.root)
-        about_window.grab_set()
-
-        text_area = tk.Text(about_window, wrap=tk.WORD, font=("微软雅黑", 10),
-                            padx=15, pady=15)
-        text_area.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        text_area.insert(tk.END, about_msg)
-        text_area.config(state=tk.DISABLED)  # 只读
-
-        # 关闭按钮
-        tk.Button(about_window, text="关闭", command=about_window.destroy,
-                  bg='#3498db', fg='white', font=("微软雅黑", 10),
-                  width=10).pack(pady=10)
-
-
-def main():
-    root = tk.Tk()
-    app = SocialNetworkGUI(root)
-    root.mainloop()
+开发团队：XXX小组
+开发日期：202X年XX月
+"""
+        messagebox.showinfo("关于", about_text)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        root = tk.Tk()
+        app = SocialNetworkApp(root)
+        root.mainloop()
+    except Exception as e:
+        messagebox.showerror("启动失败", f"应用启动时发生异常：{str(e)}")
