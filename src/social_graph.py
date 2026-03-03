@@ -36,12 +36,14 @@ class SocialGraph:
         self._update_interest_index(user_id, interests)
         return True
 
+    #在添加用户时更新倒排索引
     def _update_interest_index(self, user_id: int, interests: List[str]) -> None:
-        """私有方法：更新兴趣倒排索引（内部调用）"""
+        """更新兴趣倒排索引，支持兴趣去重和用户ID去重"""
         if not interests:
             return
-        for interest in interests:
-            interest = interest.strip()
+        # 兴趣去重（可选）
+        unique_interests = list(set([i.strip() for i in interests if i.strip()]))
+        for interest in unique_interests:
             if interest not in self.interest_index:
                 self.interest_index[interest] = []
             if user_id not in self.interest_index[interest]:
@@ -257,6 +259,39 @@ class SocialGraph:
                     if new_depth == n:
                         n_degree.add(neighbor)
         return sorted(list(n_degree))
+
+    #实现推荐算法
+    def recommend_by_interest(self, user_id: int, top_k: int = 5) -> List[Tuple[int, int]]:
+        """
+        基于兴趣的智能推荐，返回前top_k个非好友用户（按共同兴趣数降序）
+        :param user_id: 目标用户ID
+        :param top_k: 推荐数量
+        :return: [(用户ID, 共同兴趣数), ...]
+        """
+        # 参数校验
+        if user_id not in self.user_attrs or not isinstance(top_k, int) or top_k <= 0:
+            print(f"参数错误：用户不存在或top_k需为正整数")
+            return []
+
+        target_interests = self.user_attrs[user_id]['interests']
+        if not target_interests:
+            print(f"用户{user_id}无兴趣标签，无法推荐")
+            return []
+
+        # 排除自身和直接好友
+        excluded = set([user_id]) | set(self.graph.get(user_id, set()))
+
+        # 统计共同兴趣数
+        interest_count = defaultdict(int)
+        for interest in target_interests:
+            # 从倒排索引获取拥有该兴趣的用户
+            for uid in self.interest_index.get(interest, []):
+                if uid not in excluded:
+                    interest_count[uid] += 1
+
+        # 按共同兴趣数降序，ID升序排序
+        sorted_recommends = sorted(interest_count.items(), key=lambda x: (-x[1], x[0]))
+        return sorted_recommends[:top_k]
 
     #实现最短路径算法
     #无权图最短路径（BFS）

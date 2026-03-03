@@ -98,5 +98,31 @@ class TestSocialGraph(unittest.TestCase):
         result = self.graph.find_n_degree_friends(1, 3)
         self.assertEqual(result, [5])
 
+    def test_recommend_by_interest(self):
+        # 准备测试数据
+        # 用户1：篮球、音乐
+        # 用户2：阅读、摄影（与用户1无共同兴趣）
+        # 用户3：游戏、电影（无共同）
+        # 用户4：运动、烹饪（无共同）
+        # 添加一个有共同兴趣的用户5
+        self.graph.add_user(5, "孙七", ["篮球", "绘画"])
+        # 用户5与用户1的共同兴趣：篮球 -> 1个
+        # 确保用户5不是用户1的好友（目前用户1的好友是2,3）
+        recommends = self.graph.recommend_by_interest(1, top_k=5)
+        # 期望结果：[(5,1)]  因为只有用户5有一个共同兴趣
+        self.assertEqual(recommends, [(5, 1)])
+
+        # 添加更多用户测试排序
+        self.graph.add_user(6, "周八", ["音乐", "编程"])  # 与用户1共同：音乐 -> 1个
+        recommends = self.graph.recommend_by_interest(1, top_k=5)
+        # 用户5和6都有1个共同兴趣，按ID升序，应为[(5,1),(6,1)]
+        self.assertEqual(recommends, [(5, 1), (6, 1)])
+
+        # 测试排除直接好友
+        self.graph.add_friendship(1, 5)  # 5变成1的好友
+        recommends = self.graph.recommend_by_interest(1, top_k=5)
+        # 5被排除，只剩下6
+        self.assertEqual(recommends, [(6, 1)])
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
