@@ -309,8 +309,8 @@ class SocialNetworkApp:
 核心技术：Python、Tkinter、图论算法（BFS、Dijkstra）
 功能覆盖：人脉查询、路径计算、智能推荐
 
-开发团队：XXX小组
-开发日期：202X年XX月
+开发团队：猿代码小组
+开发日期：2026年3月4日
 """
         messagebox.showinfo("关于", about_text)
 
